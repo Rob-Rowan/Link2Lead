@@ -1,0 +1,49 @@
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# SQLite Databases & Local Storage
+*.db
+*.sqlite
+*.sqlite3
+leads.db
+
+# Python Cache & Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
+venv/
+.venv/
+env/
+ENV/
+
+# Streamlit Local Config
+.streamlit/secrets.toml
+
+# IDE & OS Artifacts
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
