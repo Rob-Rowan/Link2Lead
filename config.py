@@ -77,7 +77,7 @@ ALL_STATUSES: list[str] = [
 TARGET_BUYER_PRESETS: dict[str, str] = {
     "Automation Agencies & No-Code Shops": (
         'site:linkedin.com/in/ ("Founder" OR "CEO" OR "Owner" OR "Agency Owner") '
-        '("Automation Agency" OR "AI Automation" OR "No-Code Agency")'
+        '("Automation Agency" OR "AI Automation" OR "Make" OR "n8n" OR "Zapier")'
     ),
     "Boutique Software & App Dev Shops": (
         'site:linkedin.com/in/ ("Founder" OR "CEO" OR "Co-Founder" OR "Owner") '
