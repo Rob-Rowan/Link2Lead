@@ -259,10 +259,10 @@ with tab_discovery:
 
     # Number of pages slider ------------------------------------------------
     num_pages = st.slider(
-        "Number of pages (1 call = 10 results)",
+        "Search Yield Batch (1 API Credit = 10 to 50 results)",
         min_value=1,
         max_value=5,
-        value=1,
+        value=5,  # Default to 5 to pull 50 results per search
         key="discovery_pages",
     )
 

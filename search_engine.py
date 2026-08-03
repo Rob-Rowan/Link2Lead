@@ -255,84 +255,80 @@ def execute_xray_search(
             f"Daily query limit of {MAX_DAILY_QUERIES} reached."
         )
 
-    # Page check ------------------------------------------------------------
     start_page = db.get_search_offset(query_key)
     parsed_items: list[dict[str, object]] = []
-    current_page = start_page
 
     headers = {
         "X-API-KEY": api_key.strip(),
         "Content-Type": "application/json",
     }
 
-    for _ in range(page_count):
-        if daily_usage >= MAX_DAILY_QUERIES:
-            break
+    # Request up to 50 results (5 pages worth) in 1 HTTP call = 1 Serper credit
+    requested_num_results = page_count * 10
 
-        payload = {
-            "q": raw_query,
-            "num": RESULTS_PER_PAGE,
-            "page": current_page,
-        }
+    payload = {
+        "q": raw_query,
+        "num": requested_num_results,
+        "page": start_page,
+    }
 
-        # API execution -----------------------------------------------------
+    # API execution (Single HTTP Request) -----------------------------------
+    try:
+        response = requests.post(
+            _SERPER_ENDPOINT,
+            json=payload,
+            headers=headers,
+            timeout=_REQUEST_TIMEOUT_SECONDS,
+        )
+    except requests.exceptions.RequestException as exc:
+        raise SearchEngineError(
+            f"Request to Serper API failed: {exc}"
+        ) from exc
+
+    if response.status_code != 200:
+        raise SearchEngineError(
+            f"Serper API returned HTTP {response.status_code}: "
+            f"{response.text[:300]}"
+        )
+
+    data = response.json()
+
+    # Telemetry and state (Increment ONCE per search action) ----------------
+    daily_usage = db.increment_daily_usage(today)
+    db.update_search_offset(query_key, start_page + 1)
+
+    # Parse and cross-reference results ------------------------------------
+    organic_results = data.get("organic", [])
+    for item in organic_results:
+        raw_link = str(item.get("link", "") or "")
+        raw_title = str(item.get("title", "") or "")
+        snippet = str(item.get("snippet", "") or "")
+
+        if not raw_link:
+            continue
+
         try:
-            response = requests.post(
-                _SERPER_ENDPOINT,
-                json=payload,
-                headers=headers,
-                timeout=_REQUEST_TIMEOUT_SECONDS,
-            )
-        except requests.exceptions.RequestException as exc:
-            raise SearchEngineError(
-                f"Request to Serper API failed: {exc}"
-            ) from exc
+            canonical_url = db.canonicalize_linkedin_url(raw_link)
+        except Exception:
+            canonical_url = None
 
-        if response.status_code != 200:
-            raise SearchEngineError(
-                f"Serper API returned HTTP {response.status_code}: "
-                f"{response.text[:300]}"
-            )
+        if not canonical_url:
+            continue
 
-        data = response.json()
+        name, headline = parse_profile_title(raw_title)
+        location = parse_location_from_snippet(snippet)
+        existing_status = db.check_lead_status(canonical_url)
 
-        # Telemetry and state ----------------------------------------------
-        daily_usage = db.increment_daily_usage(today)
-        current_page += 1
-        db.update_search_offset(query_key, current_page)
-
-        # Parse and cross-reference results --------------------------------
-        organic_results = data.get("organic", [])
-        for item in organic_results:
-            raw_link = str(item.get("link", "") or "")
-            raw_title = str(item.get("title", "") or "")
-            snippet = str(item.get("snippet", "") or "")
-
-            if not raw_link:
-                continue
-
-            try:
-                canonical_url = db.canonicalize_linkedin_url(raw_link)
-            except Exception:
-                canonical_url = None
-
-            if not canonical_url:
-                continue
-
-            name, headline = parse_profile_title(raw_title)
-            location = parse_location_from_snippet(snippet)
-            existing_status = db.check_lead_status(canonical_url)
-
-            parsed_items.append(
-                {
-                    "linkedin_url": canonical_url,
-                    "name": name,
-                    "headline": headline,
-                    "target_category": target_category,
-                    "location": location,
-                    "existing_status": existing_status,
-                }
-            )
+        parsed_items.append(
+            {
+                "linkedin_url": canonical_url,
+                "name": name,
+                "headline": headline,
+                "target_category": target_category,
+                "location": location,
+                "existing_status": existing_status,
+            }
+        )
 
     return {
         "results": parsed_items,
