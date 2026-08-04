@@ -183,6 +183,52 @@ def save_lead(lead_data: dict, db_path: str = "leads.db") -> bool:
     return cursor.rowcount > 0
 
 
+def save_lead_manual(
+    lead_data: dict,
+    status: str = "NEW",
+    notes: str = "",
+    db_path: str = "leads.db",
+) -> bool:
+    """Insert a manually added lead with explicit status and initial notes.
+
+    The ``linkedin_url`` is canonicalized before insertion. If a lead with the
+    same canonical URL already exists, the insert is ignored, preserving the
+    duplicate protection used by the search-driven ``save_lead`` path.
+
+    Args:
+        lead_data: Dictionary containing ``linkedin_url`` and ``name``, with
+            optional ``headline``, ``target_category``, and ``location`` keys.
+        status: The initial pipeline status to assign. Defaults to ``"NEW"``.
+        notes: Initial notes to store on the lead. Defaults to an empty string.
+        db_path: Filesystem path to the SQLite database file.
+
+    Returns:
+        ``True`` if a net-new record was inserted, ``False`` if it was ignored
+        as a duplicate.
+    """
+    canonical_url = canonicalize_linkedin_url(lead_data["linkedin_url"])
+
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            INSERT OR IGNORE INTO leads
+                (linkedin_url, name, headline, target_category, location, status, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                canonical_url,
+                lead_data["name"],
+                lead_data.get("headline", ""),
+                lead_data.get("target_category", "Manual Entry"),
+                lead_data.get("location", "Unknown"),
+                status,
+                notes,
+            ),
+        )
+
+    return cursor.rowcount > 0
+
+
 def update_lead_status(
     lead_id: int, new_status: str, notes: str = None, db_path: str = "leads.db"
 ) -> None:

@@ -40,6 +40,74 @@ load_dotenv(Path(__file__).resolve().parent / ".env", override=True)
 
 
 # ---------------------------------------------------------------------------
+# Cold DM template library
+# ---------------------------------------------------------------------------
+
+# Maps a readable persona name to a cold outreach DM template. Each template
+# contains a ``[Name]`` placeholder that is replaced with the lead's first
+# name at render time. The final entry is the $750 Architecture Audit
+# follow-up pitch used to re-engage prospects already in the pipeline.
+DM_TEMPLATES: dict[str, str] = {
+    "Automation Agencies & No-Code Shops": (
+        "Hi [Name], I help automation agencies and no-code shops turn their "
+        "delivery into a predictable revenue engine. I noticed you're building "
+        "with tools like Make, n8n, or Zapier — I'd love to share how we help "
+        "agencies like yours package and sell those automations at scale. "
+        "Open to a quick 15-minute call this week?"
+    ),
+    "Boutique Software & App Dev Shops": (
+        "Hi [Name], I work with boutique software and app dev shops that want "
+        "to fill their pipeline without burning hours on cold outreach. I saw "
+        "your work and think there's a strong fit. Would you be open to a "
+        "short chat about how we generate qualified dev-shop leads on demand?"
+    ),
+    "Fractional CTOs & Tech Advisors": (
+        "Hi [Name], as a fractional CTO you're constantly balancing delivery "
+        "with business development. I help technical leaders like you source "
+        "vetted prospects so you can focus on the work that matters. "
+        "Worth a 15-minute conversation this week?"
+    ),
+    "Law Firm Partners & Owners": (
+        "Hi [Name], I help law firm partners and owners grow their book of "
+        "business with a steady stream of qualified prospects. I'd love to "
+        "show you how we source decision-makers at firms that need your "
+        "expertise. Open to a quick call?"
+    ),
+    "Medical Practices & Specialty Clinics": (
+        "Hi [Name], I work with medical practices and specialty clinics that "
+        "want more new patients without relying on expensive ads. I'd love to "
+        "share how we help practices like yours attract the right patients. "
+        "Would a 15-minute call work for you?"
+    ),
+    "Dental Groups & Specialty Dentistry": (
+        "Hi [Name], I help dental groups and specialty practices fill their "
+        "appointment books with a consistent flow of new patients. I noticed "
+        "your practice and think there's a strong fit. Open to a quick "
+        "conversation this week?"
+    ),
+    "Wealth Management & RIAs": (
+        "Hi [Name], I work with wealth managers and RIAs who want to grow "
+        "their AUM with a predictable pipeline of qualified prospects. I'd "
+        "love to show you how we source high-intent investors. Would a short "
+        "call work for you?"
+    ),
+    "Logistics & Commercial Engineering": (
+        "Hi [Name], I help logistics and commercial engineering leaders "
+        "streamline their sales pipeline with a steady flow of qualified "
+        "opportunities. I saw your background and think there's a strong fit. "
+        "Open to a 15-minute call this week?"
+    ),
+    "The $750 Architecture Audit Follow-Up Pitch": (
+        "Hi [Name], following up on my earlier note. I'd like to offer you a "
+        "complimentary $750 Architecture Audit — a no-obligation review of "
+        "your current systems, automation stack, and growth bottlenecks. "
+        "You'll get a clear, actionable roadmap either way. Want me to "
+        "schedule a time to walk through it?"
+    ),
+}
+
+
+# ---------------------------------------------------------------------------
 # Application initialization
 # ---------------------------------------------------------------------------
 
@@ -404,6 +472,74 @@ with tab_discovery:
 with tab_pipeline:
     st.subheader("📊 Pipeline Tracker")
 
+    # Manual lead quick-add -------------------------------------------------
+    with st.expander("➕ Add Lead Manually to Pipeline", expanded=False):
+        manual_url = st.text_input(
+            "LinkedIn Profile URL *",
+            key="manual_url",
+            placeholder="https://www.linkedin.com/in/john-doe",
+        )
+        manual_name = st.text_input(
+            "Full Name *",
+            key="manual_name",
+            placeholder="John Doe",
+        )
+        manual_category = st.selectbox(
+            "Target Category",
+            options=list(TARGET_BUYER_PRESETS.keys()) + ["Manual Entry"],
+            key="manual_category",
+        )
+        manual_headline = st.text_input(
+            "Headline",
+            key="manual_headline",
+            placeholder="Founder & CEO at Acme Corp",
+        )
+        manual_location = st.text_input(
+            "Location",
+            key="manual_location",
+            placeholder="Austin, TX",
+        )
+        manual_status = st.selectbox(
+            "Initial Status",
+            options=[STATUS_NEW, STATUS_DM_SENT, STATUS_CONNECTED],
+            key="manual_status",
+        )
+        manual_notes = st.text_area(
+            "Notes",
+            key="manual_notes",
+            placeholder="Optional context about this lead...",
+        )
+
+        if st.button("💾 Save Lead to Pipeline", key="manual_save"):
+            if not manual_url.strip() or not manual_name.strip():
+                st.warning("LinkedIn Profile URL and Full Name are required.")
+            else:
+                lead_data = {
+                    "linkedin_url": manual_url,
+                    "name": manual_name,
+                    "headline": manual_headline,
+                    "target_category": manual_category,
+                    "location": manual_location or "Unknown",
+                }
+                try:
+                    saved = db.save_lead_manual(
+                        lead_data,
+                        status=manual_status,
+                        notes=manual_notes,
+                    )
+                except ValueError as exc:
+                    st.warning(f"Invalid LinkedIn URL: {exc}")
+                else:
+                    if saved:
+                        st.success("Lead added to pipeline!")
+                        st.toast("Lead added to pipeline!")
+                        st.rerun()
+                    else:
+                        st.warning(
+                            "This lead already exists in the pipeline "
+                            "(duplicate LinkedIn URL)."
+                        )
+
     # Filter controls -------------------------------------------------------
     status_filter = st.radio(
         "Filter by status",
@@ -433,6 +569,21 @@ with tab_pipeline:
                     f"**Contacted:** {lead.get('date_contacted', '—')}"
                 )
                 st.markdown(f"[Open Profile]({lead.get('linkedin_url', '')})")
+
+                # Cold DM template engine -----------------------------------
+                with st.popover("✉️ Generate Outreach DM"):
+                    template_choice = st.selectbox(
+                        "Select a DM template",
+                        options=list(DM_TEMPLATES.keys()),
+                        key=f"dm_template_{lead_id}",
+                    )
+                    first_name = (
+                        lead["name"].split()[0] if lead.get("name") else "there"
+                    )
+                    dm_text = DM_TEMPLATES[template_choice].replace(
+                        "[Name]", first_name
+                    )
+                    st.code(dm_text, language="text")
 
                 # Status action buttons -------------------------------------
                 action_col1, action_col2, action_col3 = st.columns(3)
@@ -502,3 +653,95 @@ with tab_analytics:
         )
     else:
         st.info("No leads to export yet. Save leads from the Discovery tab first.")
+
+    st.divider()
+
+    # Bulk CSV importer -----------------------------------------------------
+    st.markdown("**Import Leads from CSV**")
+    st.caption(
+        "Upload a CSV export from Sales Navigator, Apollo, or a similar tool. "
+        "Columns named ``linkedin_url``/``url``/``Profile URL`` and "
+        "``name``/``Full Name``/``Name`` are detected automatically."
+    )
+
+    uploaded_file = st.file_uploader(
+        "Upload Lead CSV",
+        type=["csv"],
+        key="lead_csv_uploader",
+    )
+
+    if uploaded_file is not None:
+        # Decode the uploaded bytes to text and parse with DictReader.
+        decoded = io.StringIO(uploaded_file.getvalue().decode("utf-8-sig"))
+        reader = csv.DictReader(decoded)
+        if reader.fieldnames is None:
+            st.error("The uploaded CSV has no header row.")
+        else:
+            # Build a case-insensitive header lookup for flexible mapping.
+            header_map: dict[str, str] = {}
+            for header in reader.fieldnames:
+                normalized = header.strip().lower()
+                header_map[normalized] = header
+
+            url_header = next(
+                (
+                    header_map[key]
+                    for key in ("linkedin_url", "url", "profile url")
+                    if key in header_map
+                ),
+                None,
+            )
+            name_header = next(
+                (
+                    header_map[key]
+                    for key in ("name", "full name")
+                    if key in header_map
+                ),
+                None,
+            )
+
+            if url_header is None or name_header is None:
+                st.error(
+                    "CSV must contain a LinkedIn URL column "
+                    "(``linkedin_url``, ``url``, or ``Profile URL``) and a "
+                    "name column (``name``, ``Full Name``, or ``Name``)."
+                )
+            else:
+                imported_count = 0
+                duplicate_count = 0
+                error_count = 0
+
+                for row in reader:
+                    raw_url = (row.get(url_header) or "").strip()
+                    raw_name = (row.get(name_header) or "").strip()
+
+                    if not raw_url or not raw_name:
+                        error_count += 1
+                        continue
+
+                    lead_data = {
+                        "linkedin_url": raw_url,
+                        "name": raw_name,
+                        "headline": (row.get("headline") or "").strip(),
+                        "target_category": (
+                            row.get("target_category") or "CSV Import"
+                        ).strip(),
+                        "location": (row.get("location") or "Unknown").strip(),
+                    }
+
+                    try:
+                        saved = db.save_lead(lead_data)
+                    except ValueError:
+                        error_count += 1
+                    else:
+                        if saved:
+                            imported_count += 1
+                        else:
+                            duplicate_count += 1
+
+                st.success(
+                    f"✅ Import complete — {imported_count} imported, "
+                    f"{duplicate_count} duplicates skipped, "
+                    f"{error_count} errors."
+                )
+                st.rerun()
