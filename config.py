@@ -76,11 +76,11 @@ ALL_STATUSES: list[str] = [
 # to filter out W-2 employees, individual contributors, and general job seekers.
 TARGET_BUYER_PRESETS: dict[str, str] = {
     "Automation Agencies & No-Code Shops": (
-        'site:linkedin.com/in/ ("Founder" OR "CEO" OR "Owner" OR "Agency Owner") '
+        'site:linkedin.com/in/ ("Founder" OR "Co-Founder" OR "CEO" OR "Owner" OR "Agency Owner") '
         '("Automation Agency" OR "AI Automation" OR "Make.com" OR "Integromat" OR "n8n" OR "Zapier")'
     ),
     "Boutique Software & App Dev Shops": (
-        'site:linkedin.com/in/ ("Founder" OR "CEO" OR "Co-Founder" OR "Owner") '
+        'site:linkedin.com/in/ ("Founder" OR "Co-Founder" OR "CEO" OR "Owner") '
         '("Software Agency" OR "Dev Shop" OR "App Development Agency")'
     ),
     "Fractional CTOs & Tech Advisors": (
@@ -107,6 +107,45 @@ TARGET_BUYER_PRESETS: dict[str, str] = {
         'site:linkedin.com/in/ ("Owner" OR "Founder" OR "President") '
         '("Logistics Agency" OR "Freight Brokerage" OR "3PL")'
     ),
+}
+
+# ---------------------------------------------------------------------------
+# Target company presets (Company-First X-Ray)
+# ---------------------------------------------------------------------------
+
+# Maps a readable company persona name to a hardened Google X-Ray search query
+# targeting LinkedIn company pages. Each string combines company-type anchors
+# with employee headcount filters to surface small, decision-maker-accessible
+# firms.
+TARGET_COMPANY_PRESETS: dict[str, str] = {
+    "Automation & No-Code Agencies": (
+        'site:linkedin.com/company/ ("Automation Agency" OR "AI Automation" OR "Workflow Automation" OR "Agentic AI" OR "AI Systems") '
+        '("2-10 employees" OR "11-50 employees")'
+    ),
+    "Software & Mobile App Dev Shops": (
+        'site:linkedin.com/company/ ("Software Development" OR "Dev Shop" OR "Custom Software" OR "App Development" OR "Software Studio") '
+        '("2-10 employees" OR "11-50 employees")'
+    ),
+    "IT & Systems Integration Consultancies": (
+        'site:linkedin.com/company/ ("Systems Integrator" OR "IT Consulting" OR "API Integration" OR "Custom API") '
+        '("2-10 employees" OR "11-50 employees")'
+    ),
+}
+
+# ---------------------------------------------------------------------------
+# Target country presets (Serper geolocation)
+# ---------------------------------------------------------------------------
+
+# Maps a readable target market name to the Serper.dev ``gl`` geolocation
+# code. The ``gl`` parameter biases Google results toward the selected
+# country, enabling native country targeting for tier-1 English-speaking
+# markets.
+TARGET_COUNTRIES: dict[str, str] = {
+    "United States": "us",
+    "United Kingdom": "gb",
+    "Canada": "ca",
+    "Australia": "au",
+    "New Zealand": "nz",
 }
 
 # ---------------------------------------------------------------------------

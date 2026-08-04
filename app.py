@@ -26,6 +26,8 @@ from config import (
     STATUS_NEW,
     STATUS_SKIPPED,
     TARGET_BUYER_PRESETS,
+    TARGET_COMPANY_PRESETS,
+    TARGET_COUNTRIES,
 )
 import csv
 import io
@@ -125,6 +127,18 @@ if "search_results" not in st.session_state:
 
 if "last_yield_stats" not in st.session_state:
     st.session_state.last_yield_stats = None
+
+if "account_results" not in st.session_state:
+    st.session_state.account_results = []
+
+if "account_yield_stats" not in st.session_state:
+    st.session_state.account_yield_stats = None
+
+if "founder_results" not in st.session_state:
+    st.session_state.founder_results = {}
+
+if "founder_searches" not in st.session_state:
+    st.session_state.founder_searches = {}
 
 
 # ---------------------------------------------------------------------------
@@ -311,159 +325,407 @@ with tab_config:
 with tab_discovery:
     st.subheader("🔍 Prospect Discovery Engine")
 
-    # Category / query selector --------------------------------------------
-    discovery_category = st.selectbox(
-        "Category / Query",
-        options=list(TARGET_BUYER_PRESETS.keys()),
-        key="discovery_category",
+    # Mode selector ---------------------------------------------------------
+    discovery_mode = st.radio(
+        "Discovery Mode",
+        options=[
+            "👤 Lead Search (People First)",
+            "🏢 Account Search (Company First)",
+        ],
+        horizontal=True,
+        key="discovery_mode",
     )
 
-    # Build the effective query string, appending any modifier from Tab 1.
-    base_query = TARGET_BUYER_PRESETS[discovery_category]
-    modifier = st.session_state.get("config_location_filter", "").strip()
-    effective_query = f"{base_query} {modifier}".strip() if modifier else base_query
+    # =======================================================================
+    # Tab 2a: Lead Search (People First)
+    # =======================================================================
+    if discovery_mode == "👤 Lead Search (People First)":
 
-    st.caption(f"Effective query: {effective_query}")
-
-    # Number of pages slider ------------------------------------------------
-    num_pages = st.slider(
-        "Search Yield Batch (1 API Credit = 10 to 50 results)",
-        min_value=1,
-        max_value=5,
-        value=5,  # Default to 5 to pull 50 results per search
-        key="discovery_pages",
-    )
-
-    # Execute search button -------------------------------------------------
-    if st.button("🚀 Execute Search", key="execute_search"):
-        try:
-            result = search_engine.execute_xray_search(
-                query_key=discovery_category,
-                raw_query=effective_query,
-                target_category=discovery_category,
-                num_pages=num_pages,
-            )
-        except search_engine.DailyLimitExceededError:
-            st.error("Daily API query limit reached (95/95). Try again tomorrow.")
-        except search_engine.GoogleSearchError as exc:
-            st.error(str(exc))
-        else:
-            results = result.get("results", [])
-            st.session_state.search_results = results
-
-            total_raw = len(results)
-            existing = sum(1 for r in results if r.get("existing_status") is not None)
-            net_new = total_raw - existing
-
-            st.session_state.last_yield_stats = {
-                "total_raw": total_raw,
-                "existing": existing,
-                "net_new": net_new,
-            }
-
-            if result.get("exhausted"):
-                st.info(result.get("message", "Search exhausted."))
-
-    # Search yield banner ---------------------------------------------------
-    if st.session_state.last_yield_stats is not None:
-        stats = st.session_state.last_yield_stats
-        st.markdown(
-            f"**Fetched {stats['total_raw']} Profiles | "
-            f"{stats['net_new']} Net-New | {stats['existing']} Existing Matches**"
+        # Category / query selector ----------------------------------------
+        discovery_category = st.selectbox(
+            "Category / Query",
+            options=list(TARGET_BUYER_PRESETS.keys()),
+            key="discovery_category",
         )
 
-    st.divider()
+        # Target country selector ------------------------------------------
+        selected_country_label = st.selectbox(
+            "Target Country",
+            options=list(TARGET_COUNTRIES.keys()),
+            key="discovery_country",
+        )
+        country_code = TARGET_COUNTRIES[selected_country_label]
 
-    # Result cards grid -----------------------------------------------------
-    if not st.session_state.search_results:
-        st.info("No search results yet. Run a search above to populate this list.")
-    else:
-        for idx, prospect in enumerate(st.session_state.search_results):
-            url = prospect.get("linkedin_url", "")
-            name = prospect.get("name", "Unknown")
-            headline = prospect.get("headline", "")
-            location = prospect.get("location", "Unknown / See Profile")
-            category = prospect.get("target_category", discovery_category)
-            existing_status = prospect.get("existing_status")
+        # Build the effective query string, appending any modifier from Tab 1.
+        base_query = TARGET_BUYER_PRESETS[discovery_category]
+        modifier = st.session_state.get("config_location_filter", "").strip()
+        effective_query = f"{base_query} {modifier}".strip() if modifier else base_query
 
-            with st.container(border=True):
-                st.markdown(f"### {name}")
-                if headline:
-                    st.markdown(f"*{headline}*")
-                st.markdown(f"📍 {location}  ·  🏷️ {category}")
+        st.caption(f"Effective query: {effective_query}")
 
-                st.markdown(
-                    f"[Open Profile]({url})",
-                    unsafe_allow_html=True,
+        # Number of pages slider --------------------------------------------
+        num_pages = st.slider(
+            "Search Yield Batch (1 API Credit = 10 to 50 results)",
+            min_value=1,
+            max_value=5,
+            value=5,  # Default to 5 to pull 50 results per search
+            key="discovery_pages",
+        )
+
+        # Execute search button ---------------------------------------------
+        if st.button("🚀 Execute Search", key="execute_search"):
+            try:
+                unique_query_key = f"{discovery_category}_{country_code}"
+
+                result = search_engine.execute_xray_search(
+                    query_key=unique_query_key,
+                    raw_query=effective_query,
+                    target_category=discovery_category,
+                    num_pages=num_pages,
+                    country_code=country_code,
                 )
+            except search_engine.DailyLimitExceededError:
+                st.error("Daily API query limit reached (95/95). Try again tomorrow.")
+            except search_engine.GoogleSearchError as exc:
+                st.error(str(exc))
+            else:
+                results = result.get("results", [])
+                st.session_state.search_results = results
 
-                if existing_status is not None:
-                    _status_badge(existing_status)
+                total_raw = len(results)
+                existing = sum(1 for r in results if r.get("existing_status") is not None)
+                net_new = total_raw - existing
 
-                    if existing_status.get("status") in (
-                        STATUS_DM_SENT,
-                        STATUS_CONNECTED,
-                        STATUS_SKIPPED,
-                        STATUS_ARCHIVED,
-                    ):
+                st.session_state.last_yield_stats = {
+                    "total_raw": total_raw,
+                    "existing": existing,
+                    "net_new": net_new,
+                }
+
+                if result.get("exhausted"):
+                    st.info(result.get("message", "Search exhausted."))
+
+        # Search yield banner ------------------------------------------------
+        if st.session_state.last_yield_stats is not None:
+            stats = st.session_state.last_yield_stats
+            st.markdown(
+                f"**Fetched {stats['total_raw']} Profiles | "
+                f"{stats['net_new']} Net-New | {stats['existing']} Existing Matches**"
+            )
+
+        st.divider()
+
+        # Result cards grid --------------------------------------------------
+        if not st.session_state.search_results:
+            st.info("No search results yet. Run a search above to populate this list.")
+        else:
+            for idx, prospect in enumerate(st.session_state.search_results):
+                url = prospect.get("linkedin_url", "")
+                name = prospect.get("name", "Unknown")
+                headline = prospect.get("headline", "")
+                location = prospect.get("location", "Unknown / See Profile")
+                category = prospect.get("target_category", discovery_category)
+                existing_status = prospect.get("existing_status")
+
+                with st.container(border=True):
+                    st.markdown(f"### {name}")
+                    if headline:
+                        st.markdown(f"*{headline}*")
+                    st.markdown(f"📍 {location}  ·  🏷️ {category}")
+
+                    st.markdown(
+                        f"[Open Profile]({url})",
+                        unsafe_allow_html=True,
+                    )
+
+                    if existing_status is not None:
+                        _status_badge(existing_status)
+
                         st.button(
                             "Already Saved",
                             key=f"already_saved_{idx}",
                             disabled=True,
                         )
                     else:
-                        st.button(
-                            "Already Saved",
-                            key=f"already_saved_{idx}",
-                            disabled=True,
-                        )
-                else:
-                    col_save, col_skip = st.columns(2)
-                    with col_save:
-                        if st.button("+ Save to Pipeline", key=f"save_{idx}"):
-                            lead_data = {
-                                "linkedin_url": url,
-                                "name": name,
-                                "headline": headline,
-                                "target_category": category,
-                                "location": location,
-                            }
-                            db.save_lead(lead_data)
-                            # Reflect the new state in the UI immediately.
-                            for r in st.session_state.search_results:
-                                if r["linkedin_url"] == url:
-                                    r["existing_status"] = {
-                                        "status": STATUS_NEW,
-                                        "date_contacted": None,
-                                        "date_added": None,
-                                    }
-                            st.toast("Lead saved to pipeline!")
-                            st.rerun()
-                    with col_skip:
-                        if st.button("Skip", key=f"skip_{idx}"):
-                            lead_data = {
-                                "linkedin_url": url,
-                                "name": name,
-                                "headline": headline,
-                                "target_category": category,
-                                "location": location,
-                            }
-                            lead_id = _get_lead_id_by_url(url)
-                            if lead_id is None:
+                        col_save, col_skip = st.columns(2)
+                        with col_save:
+                            if st.button("+ Save to Pipeline", key=f"save_{idx}"):
+                                lead_data = {
+                                    "linkedin_url": url,
+                                    "name": name,
+                                    "headline": headline,
+                                    "target_category": category,
+                                    "location": location,
+                                }
                                 db.save_lead(lead_data)
+                                # Reflect the new state in the UI immediately.
+                                for r in st.session_state.search_results:
+                                    if r["linkedin_url"] == url:
+                                        r["existing_status"] = {
+                                            "status": STATUS_NEW,
+                                            "date_contacted": None,
+                                            "date_added": None,
+                                        }
+                                st.toast("Lead saved to pipeline!")
+                                st.rerun()
+                        with col_skip:
+                            if st.button("Skip", key=f"skip_{idx}"):
+                                lead_data = {
+                                    "linkedin_url": url,
+                                    "name": name,
+                                    "headline": headline,
+                                    "target_category": category,
+                                    "location": location,
+                                }
                                 lead_id = _get_lead_id_by_url(url)
-                            if lead_id is not None:
-                                db.update_lead_status(lead_id, STATUS_SKIPPED)
-                            # Reflect the new state in the UI immediately.
-                            for r in st.session_state.search_results:
-                                if r["linkedin_url"] == url:
-                                    r["existing_status"] = {
-                                        "status": STATUS_SKIPPED,
-                                        "date_contacted": None,
-                                        "date_added": None,
-                                    }
-                            st.toast("Lead skipped.")
-                            st.rerun()
+                                if lead_id is None:
+                                    db.save_lead(lead_data)
+                                    lead_id = _get_lead_id_by_url(url)
+                                if lead_id is not None:
+                                    db.update_lead_status(lead_id, STATUS_SKIPPED)
+                                # Reflect the new state in the UI immediately.
+                                for r in st.session_state.search_results:
+                                    if r["linkedin_url"] == url:
+                                        r["existing_status"] = {
+                                            "status": STATUS_SKIPPED,
+                                            "date_contacted": None,
+                                            "date_added": None,
+                                        }
+                                st.toast("Lead skipped.")
+                                st.rerun()
+
+    # =======================================================================
+    # Tab 2b: Account Search (Company First)
+    # =======================================================================
+    else:
+        st.markdown("**Account Discovery Mode — Company-First Prospecting**")
+        st.caption(
+            "Discover small companies matching your target profile, open their "
+            "LinkedIn People page for free ($0 API cost), or find the founder "
+            "with one click and save them straight to your Pipeline Tracker."
+        )
+
+        # Company preset selector -------------------------------------------
+        company_category = st.selectbox(
+            "Company Preset",
+            options=list(TARGET_COMPANY_PRESETS.keys()),
+            key="account_category",
+        )
+
+        # Target country selector -------------------------------------------
+        selected_account_country_label = st.selectbox(
+            "Target Country",
+            options=list(TARGET_COUNTRIES.keys()),
+            key="account_country",
+        )
+        account_country_code = TARGET_COUNTRIES[selected_account_country_label]
+
+        # Build the effective company query ---------------------------------
+        company_base_query = TARGET_COMPANY_PRESETS[company_category]
+        company_modifier = st.session_state.get("config_location_filter", "").strip()
+        company_effective_query = (
+            f"{company_base_query} {company_modifier}".strip()
+            if company_modifier
+            else company_base_query
+        )
+
+        st.caption(f"Effective query: {company_effective_query}")
+
+        # Number of pages slider --------------------------------------------
+        company_num_pages = st.slider(
+            "Search Yield Batch (1 API Credit = 10 to 50 results)",
+            min_value=1,
+            max_value=5,
+            value=5,  # Default to 5 to pull 50 results per search
+            key="account_pages",
+        )
+
+        # Execute company search button -------------------------------------
+        if st.button("🚀 Find Companies", key="execute_account_search"):
+            try:
+                unique_company_query_key = f"COMPANY_{company_category}_{account_country_code}"
+
+                account_result = search_engine.execute_company_xray_search(
+                    query_key=unique_company_query_key,
+                    raw_query=company_effective_query,
+                    num_pages=company_num_pages,
+                    country_code=account_country_code,
+                )
+            except search_engine.DailyLimitExceededError:
+                st.error("Daily API query limit reached (95/95). Try again tomorrow.")
+            except search_engine.GoogleSearchError as exc:
+                st.error(str(exc))
+            else:
+                companies = account_result.get("results", [])
+                st.session_state.account_results = companies
+
+                st.session_state.account_yield_stats = {
+                    "total_raw": len(companies),
+                }
+
+                if account_result.get("exhausted"):
+                    st.info(account_result.get("message", "Search exhausted."))
+
+        # Company search yield banner ---------------------------------------
+        if st.session_state.account_yield_stats is not None:
+            account_stats = st.session_state.account_yield_stats
+            st.markdown(
+                f"**Fetched {account_stats['total_raw']} Companies**"
+            )
+
+        st.divider()
+
+        # Company cards grid -------------------------------------------------
+        if not st.session_state.account_results:
+            st.info("No companies yet. Run an account search above to populate this list.")
+        else:
+            for comp_idx, company in enumerate(st.session_state.account_results):
+                company_name = company.get("company_name", "Unknown Company")
+                company_url = company.get("company_url", "")
+                company_headcount = company.get("headcount", "Unknown")
+                company_location = company.get("location", "Unknown")
+                company_description = company.get("description", "")
+                founder_key = company_url
+
+                with st.container(border=True):
+                    st.markdown(f"### 🏢 {company_name}")
+                    st.markdown(
+                        f"👥 {company_headcount}  ·  📍 {company_location}"
+                    )
+                    if company_description:
+                        st.markdown(f"*{company_description}*")
+                    st.markdown(
+                        f"[Open Company Page]({company_url})",
+                        unsafe_allow_html=True,
+                    )
+
+                    # Action buttons: People page + Find Decision Maker ------
+                    col_people, col_founder = st.columns(2)
+                    with col_people:
+                        # The People page deep-link is a $0 API cost —
+                        # no Serper query is consumed.
+                        people_url = (
+                            f"{company_url.rstrip('/')}/people/"
+                            if company_url
+                            else "#"
+                        )
+                        st.markdown(
+                            f'<a href="{people_url}" target="_blank" '
+                            f'style="text-decoration:none">'
+                            f'<button style="background-color:#0a66c2;color:white;'
+                            f'border:none;border-radius:8px;padding:8px 16px;'
+                            f'width:100%;cursor:pointer;font-size:0.95em;'
+                            f'font-weight:600;">'
+                            f"🌐 Open LinkedIn People Page</button></a>",
+                            unsafe_allow_html=True,
+                        )
+                    with col_founder:
+                        if st.button(
+                            "🔍 Find Decision Maker",
+                            key=f"find_founder_{comp_idx}",
+                        ):
+                            try:
+                                founder_result = search_engine.find_company_founder(
+                                    company_name=company_name,
+                                    country_code=account_country_code,
+                                )
+                            except search_engine.DailyLimitExceededError:
+                                st.error(
+                                    "Daily API query limit reached (95/95). "
+                                    "Try again tomorrow."
+                                )
+                            except search_engine.GoogleSearchError as exc:
+                                st.error(str(exc))
+                            else:
+                                st.session_state.founder_searches[founder_key] = {
+                                    "run": True,
+                                    "company_name": company_name,
+                                }
+                                st.session_state.founder_results[founder_key] = (
+                                    founder_result.get("results", [])
+                                )
+                                if founder_result.get("exhausted"):
+                                    st.warning(
+                                        founder_result.get(
+                                            "message",
+                                            "No founder profiles found for this company.",
+                                        )
+                                    )
+                                st.rerun()
+
+                    # Founder card rendered below the company card -----------
+                    founder_records = st.session_state.founder_results.get(
+                        founder_key, []
+                    )
+                    if st.session_state.founder_searches.get(founder_key, {}).get(
+                        "run", False
+                    ):
+                        if not founder_records:
+                            st.info(
+                                "No founder profiles found for this company. "
+                                "Try the People page link to browse manually."
+                            )
+                        else:
+                            for f_idx, founder in enumerate(founder_records):
+                                f_url = founder.get("linkedin_url", "")
+                                f_name = founder.get("name", "Unknown")
+                                f_headline = founder.get("headline", "")
+                                f_location = founder.get("location", "Unknown / See Profile")
+                                f_existing = founder.get("existing_status")
+
+                                with st.container(border=True):
+                                    st.markdown(f"#### 🧑‍💼 {f_name}")
+                                    if f_headline:
+                                        st.markdown(f"*{f_headline}*")
+                                    st.markdown(f"📍 {f_location}")
+                                    st.markdown(
+                                        f"[Open Profile]({f_url})",
+                                        unsafe_allow_html=True,
+                                    )
+
+                                    if f_existing is not None:
+                                        _status_badge(f_existing)
+                                        st.button(
+                                            "Already Saved",
+                                            key=f"founder_already_{comp_idx}_{f_idx}",
+                                            disabled=True,
+                                        )
+                                    else:
+                                        if st.button(
+                                            "+ Save Founder to Pipeline",
+                                            key=f"founder_save_{comp_idx}_{f_idx}",
+                                        ):
+                                            lead_data = {
+                                                "linkedin_url": f_url,
+                                                "name": f_name,
+                                                "headline": f_headline,
+                                                "target_category": company_category,
+                                                "location": f_location,
+                                                "company_name": company_name,
+                                                "company_linkedin_url": company_url,
+                                                "company_headcount": company_headcount,
+                                            }
+                                            saved = db.save_lead(lead_data)
+                                            if saved:
+                                                st.toast(
+                                                    f"Founder {f_name} saved to pipeline!"
+                                                )
+                                            else:
+                                                st.toast(
+                                                    "Founder already exists in pipeline "
+                                                    "(duplicate URL)."
+                                                )
+                                            # Reflect state immediately.
+                                            for rec in st.session_state.founder_results.get(
+                                                founder_key, []
+                                            ):
+                                                if rec["linkedin_url"] == f_url:
+                                                    rec["existing_status"] = {
+                                                        "status": STATUS_NEW,
+                                                        "date_contacted": None,
+                                                        "date_added": None,
+                                                    }
+                                            st.rerun()
 
 # ===========================================================================
 # Tab 3: Pipeline Tracker

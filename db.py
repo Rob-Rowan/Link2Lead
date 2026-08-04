@@ -64,10 +64,11 @@ def canonicalize_linkedin_url(url: str) -> str:
 # Schema
 # ---------------------------------------------------------------------------
 
-# DDL executed on every init_db call. All statements are idempotent via
-# IF NOT EXISTS, so repeated initialization is safe.
-_SCHEMA_STATEMENTS: tuple[str, ...] = (
-    """
+# Base DDL statement for a complete ``leads`` table with company columns.
+# Used both by the fresh install path (``_SCHEMA_STATEMENTS``) and by the
+# idempotent migration path (``migrate_company_columns``) which checks the
+# live table schema before applying any of the additions.
+_LEADS_CREATE_TABLE_SQL: str = """
     CREATE TABLE IF NOT EXISTS leads (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         linkedin_url TEXT UNIQUE NOT NULL,
@@ -78,9 +79,17 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
         status TEXT DEFAULT 'NEW',
         date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         date_contacted TIMESTAMP,
-        notes TEXT
+        notes TEXT,
+        company_name TEXT,
+        company_linkedin_url TEXT,
+        company_headcount TEXT
     )
-    """,
+    """
+
+# DDL executed on every init_db call. All statements are idempotent via
+# IF NOT EXISTS, so repeated initialization is safe.
+_SCHEMA_STATEMENTS: tuple[str, ...] = (
+    _LEADS_CREATE_TABLE_SQL,
     """
     CREATE TABLE IF NOT EXISTS search_state (
         query_key TEXT PRIMARY KEY,
@@ -100,8 +109,9 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 def init_db(db_path: str = "leads.db") -> None:
     """Initialize the SQLite database and create tables if they do not exist.
 
-    Creates the ``leads``, ``search_state``, and ``daily_usage`` tables. This
-    function is idempotent and safe to call on every application startup.
+    Creates the ``leads``, ``search_state``, and ``daily_usage`` tables, then
+    applies any idempotent schema migrations. This function is idempotent and
+    safe to call on every application startup.
 
     Args:
         db_path: Filesystem path to the SQLite database file.
@@ -109,6 +119,57 @@ def init_db(db_path: str = "leads.db") -> None:
     with sqlite3.connect(db_path) as conn:
         for statement in _SCHEMA_STATEMENTS:
             conn.execute(statement)
+
+    migrate_company_columns(db_path)
+
+
+# Company columns introduced by Account Discovery Mode (Company-First
+# Prospecting). Each entry is ``(column_name, column_type)``.
+_COMPANY_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("company_name", "TEXT"),
+    ("company_linkedin_url", "TEXT"),
+    ("company_headcount", "TEXT"),
+)
+
+
+def migrate_company_columns(db_path: str = "leads.db") -> None:
+    """Add company columns to the ``leads`` table on pre-existing databases.
+
+    Databases created before Account Discovery Mode lack the ``company_name``,
+    ``company_linkedin_url``, and ``company_headcount`` columns. This function
+    inspects the live table schema via ``PRAGMA table_info`` and issues an
+    ``ALTER TABLE ... ADD COLUMN`` for every missing column. It is fully
+    idempotent: on a fresh or already-migrated database every column already
+    exists, so no statements are executed.
+
+    Args:
+        db_path: Filesystem path to the SQLite database file.
+    """
+    with sqlite3.connect(db_path) as conn:
+        # If the leads table does not exist (fresh database), there is
+        # nothing to migrate; the CREATE TABLE in init_db already includes
+        # the columns.
+        table_exists = conn.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'leads'
+            """
+        ).fetchone()
+
+        if table_exists is None:
+            return
+
+        existing_columns = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(leads)")
+        }
+
+        for column_name, column_type in _COMPANY_COLUMNS:
+            if column_name not in existing_columns:
+                conn.execute(
+                    f"ALTER TABLE leads ADD COLUMN {column_name} {column_type}"
+                )
 
 
 # ---------------------------------------------------------------------------
@@ -153,9 +214,17 @@ def save_lead(lead_data: dict, db_path: str = "leads.db") -> bool:
     The ``linkedin_url`` is canonicalized before insertion. If a lead with the
     same canonical URL already exists, the insert is ignored.
 
+    The optional ``company_name``, ``company_linkedin_url``, and
+    ``company_headcount`` keys are persisted when provided, enabling Account
+    Discovery Mode (Company-First Prospecting) to attribute a saved decision
+    maker to their employer company. Legacy callers that omit these keys
+    continue to store ``NULL`` in the company columns.
+
     Args:
         lead_data: Dictionary containing ``linkedin_url``, ``name``,
-            ``headline``, ``target_category``, and ``location``.
+            ``headline``, ``target_category``, and ``location``, with optional
+            ``company_name``, ``company_linkedin_url``, and
+            ``company_headcount`` keys.
         db_path: Filesystem path to the SQLite database file.
 
     Returns:
@@ -168,8 +237,9 @@ def save_lead(lead_data: dict, db_path: str = "leads.db") -> bool:
         cursor = conn.execute(
             """
             INSERT OR IGNORE INTO leads
-                (linkedin_url, name, headline, target_category, location)
-            VALUES (?, ?, ?, ?, ?)
+                (linkedin_url, name, headline, target_category, location,
+                 company_name, company_linkedin_url, company_headcount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 canonical_url,
@@ -177,6 +247,9 @@ def save_lead(lead_data: dict, db_path: str = "leads.db") -> bool:
                 lead_data.get("headline"),
                 lead_data["target_category"],
                 lead_data.get("location"),
+                lead_data.get("company_name"),
+                lead_data.get("company_linkedin_url"),
+                lead_data.get("company_headcount"),
             ),
         )
 
