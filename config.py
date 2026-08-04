@@ -77,7 +77,7 @@ ALL_STATUSES: list[str] = [
 TARGET_BUYER_PRESETS: dict[str, str] = {
     "Automation Agencies & No-Code Shops": (
         'site:linkedin.com/in/ ("Founder" OR "CEO" OR "Owner" OR "Agency Owner") '
-        '("Automation Agency" OR "AI Automation" OR "Make" OR "n8n" OR "Zapier")'
+        '("Automation Agency" OR "AI Automation" OR "Make.com" OR "Integromat" OR "n8n" OR "Zapier")'
     ),
     "Boutique Software & App Dev Shops": (
         'site:linkedin.com/in/ ("Founder" OR "CEO" OR "Co-Founder" OR "Owner") '
@@ -92,20 +92,20 @@ TARGET_BUYER_PRESETS: dict[str, str] = {
         '"Law Firm Owner") ("Law Firm" OR "Legal Group")'
     ),
     "Medical Practices & Specialty Clinics": (
-        'site:linkedin.com/in/ ("Practice Owner" OR "Medical Director" OR '
-        '"Clinic Owner") ("Medical Practice" OR "Specialty Clinic")'
+        'site:linkedin.com/in/ ("Practice Owner" OR "Clinic Owner" OR '
+        '"Managing Partner") ("Medical Practice" OR "Specialty Clinic")'
     ),
     "Dental Groups & Specialty Dentistry": (
         'site:linkedin.com/in/ ("Practice Owner" OR "Dental Practice Owner" OR '
         '"Owner Dentist") ("Dental" OR "Orthodontics")'
     ),
     "Wealth Management & RIAs": (
-        'site:linkedin.com/in/ ("Managing Director" OR "Managing Partner" OR '
-        '"Principal" OR "Founder") ("Wealth Management" OR "RIA")'
+        'site:linkedin.com/in/ ("Managing Partner" OR "Founder" OR "Owner") '
+        '("Wealth Management" OR "Registered Investment Advisor" OR "RIA")'
     ),
     "Logistics & Commercial Engineering": (
-        'site:linkedin.com/in/ ("Owner" OR "President" OR "VP of Logistics" OR '
-        '"Director of Supply Chain") ("Logistics" OR "Supply Chain")'
+        'site:linkedin.com/in/ ("Owner" OR "Founder" OR "President") '
+        '("Logistics Agency" OR "Freight Brokerage" OR "3PL")'
     ),
 }
 
